@@ -1,0 +1,64 @@
+pipeline {
+    agent any
+
+    environment {
+        // Define your Docker Hub credentials ID and Image Name
+        DOCKER_IMAGE = "aziz-hssin/ecredit-back"
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
+        // Credential IDs set in Jenkins -> Credentials
+        DOCKER_HUB_CREDS = 'docker-hub-credentials-id'
+        SONAR_TOKEN = credentials('sonar-token-id')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/AzizHssin/EcreditBack.git'
+            }
+        }
+
+        stage('Build Project') {
+            steps {
+                echo 'Building the Spring Boot JAR...'
+                sh 'mvn clean install -DskipTests'
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                // This requires a SonarQube server running
+                withSonarQubeEnv('SonarQube-Server') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Creating Docker Image...'
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('', DOCKER_HUB_CREDS) {
+                        docker.image("${DOCKER_IMAGE}:${DOCKER_TAG}").push()
+                        docker.image("${DOCKER_IMAGE}:latest").push()
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline finished.'
+        }
+        success {
+            echo 'Build and Deployment successful!'
+        }
+    }
+}
